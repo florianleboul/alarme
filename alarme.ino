@@ -35,9 +35,13 @@ byte colPINs[cols] = {18, 19, 20};
 //instanciation du clavier
 Keypad matKeypad = Keypad(makeKeymap(keyChar), rowPINs, colPINs, rows, cols);
 
+//sirène
 const int alarm = 21;
+//LED d'alerte
 const int LEDAlert = 22;
+//etat de l'alarme
 boolean alarmeON = false;
+//bouton de mise en marche
 const int putON = 23;
 
 //Déclaration des codes pouvant etre trouvés dans le fichier
@@ -54,9 +58,9 @@ String numeros[9];
 int userCode;
 //code PIN
 String codePin;
-//
+//délai avant alerte en secondes
 int delayBeforeAlert;
-
+//nombre d'essais possibles
 int tryNumbs;
 
 //PIN émission ultrasons
@@ -75,10 +79,15 @@ void setup() {
   lcd.begin(16, 2);
   //initialisation de la communication série à 19200bauds/s
   Serial.begin(19200);
+  //PIN LED d'alerte en sortie
   pinMode(LEDAlert, OUTPUT);
+  //LED d'alerte éteinte
   digitalWrite(LEDAlert, LOW);
+  //PIN sirène en sorite
   pinMode(alarm, OUTPUT);
+  //sirène éteinte
   digitalWrite(alarm, LOW);
+  //bouton d'allumage en entrée
   pinMode(putON, INPUT);
 
   //PIN d'émission US en sortie
@@ -87,18 +96,24 @@ void setup() {
   pinMode(USRec, INPUT);
   //PIN d'émission US à l'état bas
   digitalWrite(USSend, LOW);
-
+  //100 ms nécéssaires entre 2 appuis sur le clavier
   matKeypad.setDebounceTime(100);
 }
 
 void loop() {
+  //on vérifie pour l'allumage par GSM
   getFromGSM();
+  //si le bouton est appuyé on active l'alarme
   if(!digitalRead(putON)){
     alarmeON = true;
   }
+  //si l'alarme est activée
   if(alarmeON){
+    //tant que la boucle vérification renvoie true (pas d'intrusion ou intrusion normale)
     while(verification());
+    //si l'intrusion était anormale
     if(alarmeON){
+      //on lance l'alerte
       alert();  
     } 
   }
@@ -125,29 +140,46 @@ boolean detection() {
   digitalWrite(USSend, LOW);
   //création et initialisation de la variable avec la durée entre l'émission et la récéption
   unsigned long duree = pulseIn(USRec, HIGH);
-  return (duree > 30000 && (((duree / 2) / 1000000.0) * 340) <= distanceAlarme);
+  return (duree > 30000 && (((duree / 2) / 1000000.0) * 34000) <= distanceAlarme);
 }
 
+/**
+ * alert gère la sirène et l'allumage de lampe tant que l'alarme n'est pas désactivée
+ */
 void alert(){
+  //allumage de la LED
   digitalWrite(LEDAlert, HIGH);
+  //allumage de la sirène
   digitalWrite(alarm, HIGH);
+  //on envoi l'alerte par SMS aux numéros
   sendSMS("ALERTE INTRUSTION", numeros);
+  //tant que la vérification renvoie false
   while(!verificationAfterAlert);
+  //on éteint la led
   digitalWrite(LEDAlert, LOW);
-  digitalWrite(alarm, LOW);  
+  //on éteint la sirène
+  digitalWrite(alarm, LOW);
+  //on coupe l'alarme  
   alarmeON = false;
 }
 
+/**
+ * getFromGSM change l'état de l'alarme si un SMS est reçu
+ * @return boolean ret  etat de l'alarme
+ */
 boolean getFromGSM(){
   messageGSM = "";
+  //si une activité provient du GSM on la lit dans la variable messageGSM
   if(gsm.available()){
     messageGSM+=gsm.readString();
   }
+  //si c'est CMTI (nouveau message), on demande à le lire
   if (getPartOfString(messageGSM, '+', 1, 4).equals("CMTI")){
     gsm.print("AT+CMGR=");
     gsm.println(getPartOfString(messageGSM, ',', 1, 2));
 
   }
+  //si c'est CMGR (lecture de message) on regarde si il contient une commande d'allumge/arret
   if ((getPartOfString(messageGSM, '+', 1, 4).equals("CMGR")) && isNumberPresent(getPartOfString(messageGSM, '+', 3, 11))){
     if (getPartOfString(messageGSM, '+', 5, 2).equals("ON")){
       alarmeON = true;
@@ -157,24 +189,31 @@ boolean getFromGSM(){
   }
   return alarmeON;
 }
+
 /**
  * verificationAfterAlert boucle tant que le bon mot de passe n'a pas été rentré
  * @return boolean  égalité des mots de passe
  */
 boolean verificationAfterAlert(){
+  //code tapé 0000
   int guestCode = 0000;
   int rang = 3;
+  //tant que le bon code n'est pas tapé
   while(guestCode != userCode){
+    //si le GSM stoppe l'alarme, on quitte
     if(!getFromGSM()){
       return true;
     }
+    //sinon on regarde la clé appuyée et on incrémente le code en fonction
     char keyPressed = matKeypad.getKey();
     if(ascii2int(keyPressed) >= 0 && ascii2int(keyPressed) <= 9){
       guestCode+=keyPressed*puissance(10,rang);
       rang--;
+      //si on a tapé 4 chiffres, on redescend à 0 tapés
       if(rang = 0)rang = 3;
     }
   }
+  //vrai si les codes sont égaux
   return (guestCode == userCode);
 }
 
@@ -185,22 +224,28 @@ boolean verificationAfterAlert(){
  */
 boolean verification(){
   boolean ret = true;
+  //si on détecte un problème
   if(detection()){
+    //code tapé 0000
     int guestCode = 0000;
     unsigned int time = millis();
     int rang = 3;
     int trys = tryNumbs;
-    while(guestCode != userCode && millis() - time < delayBeforeAlert && trys > 0){
+    //tant que le bon code n'est pas tapé, ou que le temps ou le nombre d'essais ne sont pas écoulés
+    while(guestCode != userCode && (millis() - time)/1000 < delayBeforeAlert && trys > 0){
+      //on regarde la clé appuyée et on incrémente le code en fonction
       char keyPressed = matKeypad.getKey();
       if(ascii2int(keyPressed) >= 0 && ascii2int(keyPressed) <= 9){
         guestCode+=keyPressed*puissance(10,rang);
         rang--;
+        //si on a tapé 4 chiffres, on redescend à 0 tapés en perdant un essai
         if(rang = 0){
           rang = 3;
           trys--;
         }
       }
     }
+    //si les codes sont égaux on désactive l'alarme
     if(guestCode == userCode){
       alarmeON = false;
       ret = true;
@@ -210,9 +255,16 @@ boolean verification(){
   return ret;
 }
 
+/**
+ * isNumberPresent vérifie si un numéro au format 336XXXXXXXX est présent dans le tableau des numéros de confiance
+ * @param    String number        numéro à vérifier
+ * @return   Boolean ret          vérification valide ou non
+ */
 boolean isNumberPresent(String number){
   boolean ret = false;
+  //pour chaque numéro du tableau on regarde si il correspond
   for(int i = 0; i < sizeof(numeros); i++){
+    //si oui, on passe le retour à vrai et on quitte
     if(numeros[i].equals(number)){
         ret = true;
         break;
