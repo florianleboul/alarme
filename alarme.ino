@@ -31,18 +31,18 @@ char keyChar[rows][cols] = {
 //PINs connectés aux lignes
 byte rowPINs[rows] = {14, 15, 16, 17};
 //PINs connectés aux colones
-byte colPINs[cols] = {18, 19, 20};
+byte colPINs[cols] = {18, 19, 22};
 //instanciation du clavier
 Keypad matKeypad = Keypad(makeKeymap(keyChar), rowPINs, colPINs, rows, cols);
 
 //sirène
-const int alarm = 21;
+const int alarm = 23;
 //LED d'alerte
-const int LEDAlert = 22;
+const int LEDAlert = 24;
 //etat de l'alarme
 boolean alarmeON = false;
 //bouton de mise en marche
-const int putON = 23;
+const int putON = 25;
 
 //Déclaration des codes pouvant etre trouvés dans le fichier
 // -DIS = distance de détections
@@ -290,10 +290,27 @@ void sendSMS(String message, String numeros[]) {
       delay(500);
       //on envoie le message au GSM
       gsm.println(message);
+      gsm.println(getCurrentTime());
       //on clôture le message et on l'envoie
       gsm.write(0x1A);
     }
   }
+}
+
+String getCurrentTime(){
+  String ret = "";
+  DateTime time = RTC.now();
+  ret+=(now.day(), DEC);
+  ret+=('/');
+  ret+=(now.month(), DEC);
+  ret+=('/');
+  ret+=(now.year(), DEC);  
+  ret+=(' ');
+  ret+=(now.hour(), DEC);
+  ret+=(':');
+  ret+=(now.minute(), DEC);
+  ret+=(':');
+  ret+=(now.second(), DEC);
 }
 
 /**
